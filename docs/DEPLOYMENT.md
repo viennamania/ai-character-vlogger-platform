@@ -7,6 +7,7 @@ Date: 2026-05-04
 ```text
 Application: Next.js App Router
 Database: MongoDB Atlas
+Content uploads: Vercel Blob
 Hosting: Vercel
 Repository root: ai-character-vlogger-platform
 Vercel root directory: web
@@ -26,9 +27,12 @@ Required environment variables:
 ```bash
 MONGODB_URI="mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority"
 MONGODB_DB="ai_character_vlogger"
+BLOB_READ_WRITE_TOKEN="vercel_blob_rw_..."
 ```
 
 The app can run without `MONGODB_URI`, but it will use browser local storage fallback and return `configured: false` from `/api/health/atlas`.
+
+The app can render without `BLOB_READ_WRITE_TOKEN`, but content uploads will not work until a Vercel Blob store is connected.
 
 ## MongoDB Atlas
 
@@ -45,6 +49,7 @@ Collections currently used by the app:
 ```text
 episode_drafts
 platform_metrics
+media_assets
 ```
 
 The app uses lazy MongoDB client initialization so `next build` does not require database credentials.
@@ -66,12 +71,21 @@ Set these Vercel environment variables for Preview and Production:
 ```text
 MONGODB_URI
 MONGODB_DB
+BLOB_READ_WRITE_TOKEN
+```
+
+Vercel creates `BLOB_READ_WRITE_TOKEN` automatically when a Blob store is connected to the project from the Storage tab. Pull it locally with:
+
+```bash
+cd web
+vercel env pull .env.local
 ```
 
 After deployment, verify:
 
 ```text
 /api/health/atlas
+/api/health/blob
 ```
 
 Expected connected response:
@@ -102,5 +116,7 @@ vercel deploy web --prod -y
 
 - Draft saves call `POST /api/drafts`.
 - Metrics saves call `POST /api/metrics`.
-- Without Atlas env vars, both endpoints return `persisted: false` and the UI keeps local browser persistence.
+- Content uploads call `POST /api/uploads` for a client upload token, then the browser uploads directly to Vercel Blob.
+- Uploaded content metadata is stored in `media_assets` when Atlas is configured.
+- Without Atlas env vars, persistence endpoints return `persisted: false` and the UI keeps local browser persistence.
 - With Atlas env vars, drafts are upserted into `episode_drafts` and metrics are inserted into `platform_metrics`.

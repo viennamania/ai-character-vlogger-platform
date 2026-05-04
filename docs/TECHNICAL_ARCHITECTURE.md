@@ -22,7 +22,7 @@ Backend API
 Data Stores
   |
   |-- MongoDB Atlas for characters, episodes, fan memory, publishing state
-  |-- Object storage for media assets
+  |-- Vercel Blob for media assets and export packages
   |-- Queue for generation and publishing jobs
 ```
 
@@ -33,6 +33,7 @@ The current app implementation uses:
 ```text
 Next.js App Router in web/
 + MongoDB Atlas via the official MongoDB Node.js driver
++ Vercel Blob for content uploads
 + Vercel hosting
 ```
 
@@ -40,10 +41,14 @@ The initial persistence endpoints are:
 
 ```text
 GET /api/health/atlas
+GET /api/health/blob
 GET /api/drafts
 POST /api/drafts
 GET /api/metrics
 POST /api/metrics
+GET /api/media-assets
+POST /api/media-assets
+POST /api/uploads
 ```
 
 MongoDB collections currently used:
@@ -51,6 +56,7 @@ MongoDB collections currently used:
 ```text
 episode_drafts
 platform_metrics
+media_assets
 ```
 
 ## Core Services

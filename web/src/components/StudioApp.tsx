@@ -17,7 +17,9 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { PutBlobResult } from "@vercel/blob";
+import { upload } from "@vercel/blob/client";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { defaultCharacter } from "@/data/sampleCharacter";
 import { vlogTemplates } from "@/data/templates";
 import {
@@ -30,11 +32,13 @@ import {
   generateEpisodeDraft,
 } from "@/lib/episodeGenerator";
 import type { MetricRecord, SavedEpisodeDraft } from "@/lib/persistence";
+import type { MediaAssetRecord } from "@/lib/persistence";
 
 type ActiveView = "builder" | "queue" | "analytics";
 
 const savedDraftsKey = "ai-vlogger.saved-drafts";
 const metricsKey = "ai-vlogger.metrics";
+const mediaAssetsKey = "ai-vlogger.media-assets";
 const metricFields: Array<[keyof Omit<MetricRecord, "draftId" | "title" | "platform" | "notes" | "createdAt">, string]> = [
   ["views", "Views"],
   ["likes", "Likes"],
@@ -56,8 +60,12 @@ export function StudioApp() {
   });
   const [savedDrafts, setSavedDrafts] = useLocalState<SavedEpisodeDraft[]>(savedDraftsKey, []);
   const [metrics, setMetrics] = useLocalState<MetricRecord[]>(metricsKey, []);
+  const [mediaAssets, setMediaAssets] = useLocalState<MediaAssetRecord[]>(mediaAssetsKey, []);
   const [atlasStatus, setAtlasStatus] = useState("Checking Atlas");
+  const [blobStatus, setBlobStatus] = useState("Checking Blob");
   const [syncStatus, setSyncStatus] = useState("Local first");
+  const [uploadStatus, setUploadStatus] = useState("No uploads yet");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const selectedTemplate = useMemo(
     () => vlogTemplates.find((template) => template.id === selectedTemplateId) ?? vlogTemplates[0],
@@ -81,10 +89,14 @@ export function StudioApp() {
       const health = await fetch("/api/health/atlas", { cache: "no-store" }).then((response) => response.json());
       setAtlasStatus(health.connected ? `Atlas connected: ${health.database}` : "Atlas not configured");
 
-      const [draftResponse, metricResponse] = await Promise.all([
+      const [blobHealth, draftResponse, metricResponse, mediaResponse] = await Promise.all([
+        fetch("/api/health/blob", { cache: "no-store" }).then((response) => response.json()),
         fetch("/api/drafts", { cache: "no-store" }).then((response) => response.json()),
         fetch("/api/metrics", { cache: "no-store" }).then((response) => response.json()),
+        fetch("/api/media-assets", { cache: "no-store" }).then((response) => response.json()),
       ]);
+
+      setBlobStatus(blobHealth.configured ? "Blob configured" : "Blob token missing");
 
       if (draftResponse.persisted && draftResponse.drafts.length > 0) {
         setSavedDrafts(draftResponse.drafts);
@@ -93,8 +105,13 @@ export function StudioApp() {
       if (metricResponse.persisted && metricResponse.metrics.length > 0) {
         setMetrics(metricResponse.metrics);
       }
+
+      if (mediaResponse.persisted && mediaResponse.assets.length > 0) {
+        setMediaAssets(mediaResponse.assets);
+      }
     } catch {
       setAtlasStatus("Atlas check unavailable");
+      setBlobStatus("Blob check unavailable");
     }
   }
 
@@ -136,6 +153,45 @@ export function StudioApp() {
     setSavedDrafts((current) =>
       current.map((item) => (item.id === draftId ? { ...item, reviewStatus: "Approved" } : item)),
     );
+  }
+
+  async function uploadContent(file: File) {
+    setUploadStatus("Uploading to Vercel Blob");
+    setUploadProgress(0);
+
+    try {
+      const blob = await upload(buildBlobPath(draft, file.name), file, {
+        access: "public",
+        handleUploadUrl: "/api/uploads",
+        multipart: file.size > 4.5 * 1024 * 1024,
+        clientPayload: JSON.stringify({
+          characterId: draft.characterId,
+          characterVersion: draft.characterVersion,
+          templateId: draft.templateId,
+          episodeDraftId: draft.id,
+          originalFilename: file.name,
+          size: file.size,
+        }),
+        onUploadProgress: ({ percentage }) => {
+          setUploadProgress(Math.round(percentage));
+        },
+      });
+
+      const asset = buildMediaAssetRecord(blob, draft, file);
+      setMediaAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)].slice(0, 30));
+
+      const result = await fetch("/api/media-assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(asset),
+      }).then((response) => response.json());
+
+      setUploadStatus(result.persisted ? "Uploaded and saved to Atlas" : "Uploaded to Blob");
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setUploadProgress(null);
+    }
   }
 
   return (
@@ -196,6 +252,10 @@ export function StudioApp() {
               <ShieldCheck size={16} />
               {syncStatus}
             </span>
+            <span className="status-pill">
+              <Upload size={16} />
+              {blobStatus}
+            </span>
             <button className="primary-button" onClick={saveDraft}>
               <Save size={16} />
               Save draft
@@ -225,6 +285,10 @@ export function StudioApp() {
             setSelectedTemplateId={setSelectedTemplateId}
             options={options}
             updateOptions={updateOptions}
+            uploadContent={uploadContent}
+            uploadStatus={uploadStatus}
+            uploadProgress={uploadProgress}
+            mediaAssets={mediaAssets}
           />
         )}
 
@@ -253,9 +317,23 @@ interface BuilderViewProps {
   setSelectedTemplateId: (id: string) => void;
   options: EpisodeOptions;
   updateOptions: <T extends keyof EpisodeOptions>(field: T, value: EpisodeOptions[T]) => void;
+  uploadContent: (file: File) => Promise<void>;
+  uploadStatus: string;
+  uploadProgress: number | null;
+  mediaAssets: MediaAssetRecord[];
 }
 
-function BuilderView({ draft, selectedTemplateId, setSelectedTemplateId, options, updateOptions }: BuilderViewProps) {
+function BuilderView({
+  draft,
+  selectedTemplateId,
+  setSelectedTemplateId,
+  options,
+  updateOptions,
+  uploadContent,
+  uploadStatus,
+  uploadProgress,
+  mediaAssets,
+}: BuilderViewProps) {
   return (
     <div className="builder-grid">
       <section className="panel">
@@ -350,8 +428,78 @@ function BuilderView({ draft, selectedTemplateId, setSelectedTemplateId, options
           <span>{draft.exportManifest.durationSeconds}s</span>
           <span>{draft.exportManifest.assets.length} assets</span>
         </div>
+        <UploadPanel
+          draft={draft}
+          mediaAssets={mediaAssets}
+          uploadContent={uploadContent}
+          uploadProgress={uploadProgress}
+          uploadStatus={uploadStatus}
+        />
       </aside>
     </div>
+  );
+}
+
+function UploadPanel({
+  draft,
+  mediaAssets,
+  uploadContent,
+  uploadProgress,
+  uploadStatus,
+}: {
+  draft: EpisodeDraft;
+  mediaAssets: MediaAssetRecord[];
+  uploadContent: (file: File) => Promise<void>;
+  uploadProgress: number | null;
+  uploadStatus: string;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const episodeAssets = mediaAssets.filter((asset) => asset.episodeDraftId === draft.id);
+
+  async function submitUpload(event: FormEvent) {
+    event.preventDefault();
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) return;
+    await uploadContent(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  return (
+    <section className="upload-panel">
+      <div className="section-heading compact">
+        <div>
+          <p className="eyebrow">Content storage</p>
+          <h3>Vercel Blob upload</h3>
+        </div>
+      </div>
+      <form className="upload-form" onSubmit={submitUpload}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,audio/mpeg,audio/wav,application/pdf"
+          required
+        />
+        <button className="primary-button">
+          <Upload size={16} />
+          Upload
+        </button>
+      </form>
+      <p className="upload-status">
+        {uploadStatus}
+        {uploadProgress !== null ? ` (${uploadProgress}%)` : ""}
+      </p>
+      <div className="asset-list">
+        {episodeAssets.length === 0 && <p className="muted">No content files linked to this episode yet.</p>}
+        {episodeAssets.map((asset) => (
+          <a href={asset.url} target="_blank" rel="noreferrer" key={asset.id} className="asset-link">
+            <strong>{asset.originalFilename || asset.pathname}</strong>
+            <small>
+              {asset.contentType} - {formatFileSize(asset.size)}
+            </small>
+          </a>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -732,4 +880,41 @@ function formatNumber(value: number) {
 
 function savedDraftIdKey(drafts: SavedEpisodeDraft[]) {
   return drafts.map((draft) => draft.id).join("|");
+}
+
+function buildBlobPath(draft: EpisodeDraft, filename: string) {
+  return `uploads/${draft.characterId}/${draft.templateId}/${sanitizeFilename(filename)}`;
+}
+
+function sanitizeFilename(filename: string) {
+  return filename
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function buildMediaAssetRecord(blob: PutBlobResult, draft: EpisodeDraft, file: File): MediaAssetRecord {
+  return {
+    id: blob.url,
+    storage: "vercel_blob",
+    access: "public",
+    url: blob.url,
+    downloadUrl: blob.downloadUrl,
+    pathname: blob.pathname,
+    contentType: blob.contentType,
+    size: file.size,
+    uploadedAt: new Date().toISOString(),
+    characterId: draft.characterId,
+    characterVersion: draft.characterVersion,
+    templateId: draft.templateId,
+    episodeDraftId: draft.id,
+    originalFilename: file.name,
+    status: "linked",
+  };
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

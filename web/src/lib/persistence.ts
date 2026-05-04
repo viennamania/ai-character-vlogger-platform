@@ -17,3 +17,21 @@ export interface MetricRecord {
   notes: string;
   createdAt?: string;
 }
+
+export interface MediaAssetRecord {
+  id: string;
+  storage: "vercel_blob";
+  access: "public";
+  url: string;
+  downloadUrl: string;
+  pathname: string;
+  contentType: string;
+  size: number;
+  uploadedAt: string;
+  characterId?: string;
+  characterVersion?: string;
+  templateId?: string;
+  episodeDraftId?: string;
+  originalFilename?: string;
+  status: "uploaded" | "linked";
+}

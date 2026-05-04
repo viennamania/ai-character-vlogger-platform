@@ -20,6 +20,7 @@ The current implementation stack is:
 ```text
 Next.js App Router
 + MongoDB Atlas through the official MongoDB Node.js driver
++ Vercel Blob for content uploads
 + Vercel hosting
 ```
 
@@ -45,9 +46,10 @@ MongoDB Atlas is configured through environment variables:
 ```bash
 MONGODB_URI="mongodb+srv://..."
 MONGODB_DB="ai_character_vlogger"
+BLOB_READ_WRITE_TOKEN="vercel_blob_rw_..."
 ```
 
-If `MONGODB_URI` is not configured, the app still runs with browser local storage fallback. Use `/api/health/atlas` to verify Atlas runtime connectivity.
+If `MONGODB_URI` is not configured, the app still runs with browser local storage fallback. Use `/api/health/atlas` to verify Atlas runtime connectivity and `/api/health/blob` to verify Blob token configuration.
 
 ## Legacy Prototype
 
