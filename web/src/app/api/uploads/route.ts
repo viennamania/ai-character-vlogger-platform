@@ -58,6 +58,7 @@ export async function POST(request: Request) {
           episodeDraftId: payload.episodeDraftId,
           originalFilename: payload.originalFilename,
           status: "uploaded",
+          reviewStatus: "Needs review",
         };
 
         const db = await getDb();

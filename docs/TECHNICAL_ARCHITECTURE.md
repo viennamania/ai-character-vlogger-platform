@@ -59,6 +59,13 @@ platform_metrics
 media_assets
 ```
 
+Media assets store Blob URLs plus review state:
+
+```text
+Needs review -> Approved -> packaging/publishing
+Needs review -> Rejected -> exclude from packaging/publishing
+```
+
 ## Core Services
 
 ### Character Service

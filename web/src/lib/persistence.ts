@@ -34,4 +34,6 @@ export interface MediaAssetRecord {
   episodeDraftId?: string;
   originalFilename?: string;
   status: "uploaded" | "linked";
+  reviewStatus: "Needs review" | "Approved" | "Rejected";
+  reviewedAt?: string;
 }

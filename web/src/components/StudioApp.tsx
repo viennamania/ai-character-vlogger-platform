@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Download,
   FileJson,
+  Images,
   MessageCircle,
   Play,
   Plus,
@@ -34,7 +35,7 @@ import {
 import type { MetricRecord, SavedEpisodeDraft } from "@/lib/persistence";
 import type { MediaAssetRecord } from "@/lib/persistence";
 
-type ActiveView = "builder" | "queue" | "analytics";
+type ActiveView = "builder" | "queue" | "assets" | "analytics";
 
 const savedDraftsKey = "ai-vlogger.saved-drafts";
 const metricsKey = "ai-vlogger.metrics";
@@ -155,6 +156,32 @@ export function StudioApp() {
     );
   }
 
+  async function updateMediaAssetReview(assetId: string, reviewStatus: MediaAssetRecord["reviewStatus"]) {
+    const nextReviewedAt = new Date().toISOString();
+    const nextAsset = mediaAssets.find((asset) => asset.id === assetId);
+    if (!nextAsset) return;
+
+    const updatedAsset: MediaAssetRecord = {
+      ...nextAsset,
+      reviewStatus,
+      reviewedAt: nextReviewedAt,
+    };
+
+    setMediaAssets((current) => current.map((asset) => (asset.id === assetId ? updatedAsset : asset)));
+    setSyncStatus("Saving asset review");
+
+    try {
+      const result = await fetch("/api/media-assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedAsset),
+      }).then((response) => response.json());
+      setSyncStatus(result.persisted ? "Asset review saved to Atlas" : "Asset review saved locally");
+    } catch {
+      setSyncStatus("Asset review saved locally");
+    }
+  }
+
   async function uploadContent(file: File) {
     setUploadStatus("Uploading to Vercel Blob");
     setUploadProgress(0);
@@ -273,6 +300,9 @@ export function StudioApp() {
           <TabButton active={activeView === "queue"} onClick={() => setActiveView("queue")} icon={<ClipboardList />}>
             Review queue
           </TabButton>
+          <TabButton active={activeView === "assets"} onClick={() => setActiveView("assets")} icon={<Images />}>
+            Assets
+          </TabButton>
           <TabButton active={activeView === "analytics"} onClick={() => setActiveView("analytics")} icon={<BarChart3 />}>
             Analytics
           </TabButton>
@@ -295,6 +325,8 @@ export function StudioApp() {
         {activeView === "queue" && (
           <QueueView savedDrafts={savedDrafts} approveDraft={approveDraft} removeDraft={removeDraft} downloadDraft={downloadDraft} />
         )}
+
+        {activeView === "assets" && <AssetsView mediaAssets={mediaAssets} updateMediaAssetReview={updateMediaAssetReview} />}
 
         {activeView === "analytics" && (
           <AnalyticsView
@@ -640,6 +672,91 @@ function QueueView({
   );
 }
 
+function AssetsView({
+  mediaAssets,
+  updateMediaAssetReview,
+}: {
+  mediaAssets: MediaAssetRecord[];
+  updateMediaAssetReview: (assetId: string, reviewStatus: MediaAssetRecord["reviewStatus"]) => Promise<void>;
+}) {
+  const needsReviewCount = mediaAssets.filter((asset) => asset.reviewStatus === "Needs review").length;
+
+  if (mediaAssets.length === 0) {
+    return (
+      <section className="empty-state">
+        <Images size={34} />
+        <h3>No uploaded content</h3>
+        <p>Vercel Blob uploads will appear here for media review and episode packaging.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Asset review</p>
+          <h3>Media library</h3>
+        </div>
+        <span className="count-pill">{needsReviewCount} needs review</span>
+      </div>
+      <div className="asset-review-grid">
+        {mediaAssets.map((asset) => (
+          <article className="asset-review-card" key={asset.id}>
+            <div className="asset-preview">
+              {asset.contentType.startsWith("image/") ? (
+                <img src={asset.url} alt={asset.originalFilename || asset.pathname} />
+              ) : (
+                <div>
+                  <FileJson size={24} />
+                  <span>{asset.contentType}</span>
+                </div>
+              )}
+            </div>
+            <div className="asset-review-body">
+              <div className="section-heading compact">
+                <div>
+                  <strong>{asset.originalFilename || asset.pathname}</strong>
+                  <small>{asset.pathname}</small>
+                </div>
+                <mark className={asset.reviewStatus === "Approved" ? "approved" : asset.reviewStatus === "Rejected" ? "rejected" : ""}>
+                  {asset.reviewStatus}
+                </mark>
+              </div>
+              <dl className="asset-meta">
+                <div>
+                  <dt>Size</dt>
+                  <dd>{formatFileSize(asset.size)}</dd>
+                </div>
+                <div>
+                  <dt>Episode</dt>
+                  <dd>{asset.episodeDraftId || "Unlinked"}</dd>
+                </div>
+                <div>
+                  <dt>Uploaded</dt>
+                  <dd>{formatDate(asset.uploadedAt)}</dd>
+                </div>
+              </dl>
+              <div className="asset-actions">
+                <a className="secondary-link" href={asset.url} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+                <button className="primary-button" onClick={() => updateMediaAssetReview(asset.id, "Approved")}>
+                  <CheckCircle2 size={16} />
+                  Approve
+                </button>
+                <button className="icon-button danger" onClick={() => updateMediaAssetReview(asset.id, "Rejected")} title="Reject">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AnalyticsView({
   savedDrafts,
   metrics,
@@ -910,6 +1027,7 @@ function buildMediaAssetRecord(blob: PutBlobResult, draft: EpisodeDraft, file: F
     episodeDraftId: draft.id,
     originalFilename: file.name,
     status: "linked",
+    reviewStatus: "Needs review",
   };
 }
 

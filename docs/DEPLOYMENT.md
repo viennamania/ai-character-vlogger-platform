@@ -118,5 +118,6 @@ vercel deploy web --prod -y
 - Metrics saves call `POST /api/metrics`.
 - Content uploads call `POST /api/uploads` for a client upload token, then the browser uploads directly to Vercel Blob.
 - Uploaded content metadata is stored in `media_assets` when Atlas is configured.
+- Uploaded content can be reviewed as `Needs review`, `Approved`, or `Rejected`; review state is persisted through `POST /api/media-assets`.
 - Without Atlas env vars, persistence endpoints return `persisted: false` and the UI keeps local browser persistence.
 - With Atlas env vars, drafts are upserted into `episode_drafts` and metrics are inserted into `platform_metrics`.

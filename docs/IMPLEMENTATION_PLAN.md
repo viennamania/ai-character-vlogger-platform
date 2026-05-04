@@ -25,6 +25,7 @@ The Next.js app turns the planning docs into an operational MVP surface:
 - Manual analytics feedback loop
 - MongoDB Atlas persistence endpoints for drafts and metrics
 - Vercel Blob client uploads for content files
+- Media asset review states for uploaded content
 
 The generation layer is currently deterministic. That is deliberate. It lets the product shape, data contracts, review gates, and creator workflow be tested before adding model costs, media pipeline complexity, publishing API approvals, or Fanvue integration.
 
@@ -92,7 +93,7 @@ web/src/app/api/uploads/route.ts
   Vercel Blob client upload token endpoint and upload-complete metadata hook
 
 web/src/app/api/media-assets/route.ts
-  Uploaded content metadata endpoint
+  Uploaded content metadata and review state endpoint
 
 web/src/lib/mongodb.ts
   Lazy MongoDB Atlas client
@@ -170,6 +171,7 @@ When moving from local state to backend storage, each generated output should st
 
 - Use Vercel Blob for uploaded source assets, thumbnails, rendered videos, subtitles, and export package files.
 - Store Blob URLs and metadata in the `media_assets` Atlas collection.
+- Track each media asset through `Needs review`, `Approved`, and `Rejected` states before packaging or publishing.
 - Generate thumbnail concepts first, then still images, then video clips.
 - Add subtitle file export and burned-in subtitle rendering.
 - Keep a review item for every generated media asset.
