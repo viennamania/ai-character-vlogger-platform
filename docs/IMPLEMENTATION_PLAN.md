@@ -4,9 +4,17 @@ Date: 2026-05-04
 
 ## Current State
 
-The project now has a working local prototype in `prototype/`.
+The project now has a deployable Next.js app in `web/` and the original local prototype in `prototype/`.
 
-The prototype is a React/Vite client app that turns the planning docs into an operational MVP surface:
+The current implementation target is:
+
+```text
+Next.js App Router
++ MongoDB Atlas
++ Vercel hosting
+```
+
+The Next.js app turns the planning docs into an operational MVP surface:
 
 - Character profile and safety defaults
 - Vlog template selection
@@ -14,6 +22,7 @@ The prototype is a React/Vite client app that turns the planning docs into an op
 - Human review queue
 - Export package JSON
 - Manual analytics feedback loop
+- MongoDB Atlas persistence endpoints for drafts and metrics
 
 The generation layer is currently deterministic. That is deliberate. It lets the product shape, data contracts, review gates, and creator workflow be tested before adding model costs, media pipeline complexity, publishing API approvals, or Fanvue integration.
 
@@ -47,7 +56,7 @@ Implemented MVP outputs:
 ## Local Runbook
 
 ```bash
-cd prototype
+cd web
 npm install
 npm run dev
 ```
@@ -59,7 +68,32 @@ npm run test
 npm run build
 ```
 
-## Prototype Architecture
+## Next.js App Architecture
+
+```text
+web/src/app/page.tsx
+  App Router entrypoint
+
+web/src/components/StudioApp.tsx
+  Client-side creator console
+
+web/src/app/api/health/atlas/route.ts
+  Atlas runtime health check
+
+web/src/app/api/drafts/route.ts
+  Draft persistence endpoint
+
+web/src/app/api/metrics/route.ts
+  Manual metrics persistence endpoint
+
+web/src/lib/mongodb.ts
+  Lazy MongoDB Atlas client
+
+web/src/lib/episodeGenerator.ts
+  Deterministic package generator and data contract
+```
+
+## Legacy Prototype Architecture
 
 ```text
 prototype/src/App.tsx
@@ -108,8 +142,8 @@ When moving from local state to backend storage, each generated output should st
 
 ### Step 1 - App persistence
 
-- Add Postgres schema for users, characters, character versions, episode templates, episodes, episode outputs, media assets, review items, and platform metrics.
-- Replace localStorage for saved drafts and analytics with API-backed persistence.
+- Use MongoDB Atlas collections for users, characters, character versions, episode templates, episodes, episode outputs, media assets, review items, and platform metrics.
+- Replace localStorage fallback for saved drafts and analytics with Atlas-backed persistence.
 - Keep manual export as the default publishing mode.
 
 ### Step 2 - Prompt and text generation

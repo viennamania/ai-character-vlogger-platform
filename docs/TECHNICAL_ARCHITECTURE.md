@@ -21,9 +21,36 @@ Backend API
   |
 Data Stores
   |
-  |-- Postgres for characters, episodes, fan memory, publishing state
+  |-- MongoDB Atlas for characters, episodes, fan memory, publishing state
   |-- Object storage for media assets
   |-- Queue for generation and publishing jobs
+```
+
+## Current Implementation Stack
+
+The current app implementation uses:
+
+```text
+Next.js App Router in web/
++ MongoDB Atlas via the official MongoDB Node.js driver
++ Vercel hosting
+```
+
+The initial persistence endpoints are:
+
+```text
+GET /api/health/atlas
+GET /api/drafts
+POST /api/drafts
+GET /api/metrics
+POST /api/metrics
+```
+
+MongoDB collections currently used:
+
+```text
+episode_drafts
+platform_metrics
 ```
 
 ## Core Services
@@ -111,7 +138,7 @@ Potential Fanvue API usage:
 - Segment fans
 - Analyze earnings
 
-## Suggested Database Tables
+## Suggested MongoDB Collections
 
 ```text
 users
@@ -160,4 +187,3 @@ audit_logs
 ## Build Recommendation
 
 Phase 1 should not depend on full auto-publishing approval from every platform. Start with export-ready packages and add platform APIs after product demand is validated.
-

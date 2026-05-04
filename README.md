@@ -11,10 +11,47 @@ This workspace captures the initial product research and planning for a creator 
 - [MVP Roadmap](./docs/MVP_ROADMAP.md): build phases, scope, risks, and mitigations
 - [Research Summary](./docs/RESEARCH_SUMMARY.md): industry, Fanvue API, vlog platforms, and strategic conclusions
 - [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md): current prototype, engineering sequence, backend boundaries, and next milestones
+- [Deployment](./docs/DEPLOYMENT.md): MongoDB Atlas, Next.js, and Vercel hosting setup
 
-## Prototype
+## Current App Stack
 
-The first working artifact is a local Creator Workflow MVP prototype:
+The current implementation stack is:
+
+```text
+Next.js App Router
++ MongoDB Atlas through the official MongoDB Node.js driver
++ Vercel hosting
+```
+
+The deployable app lives in `web/`.
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Production checks:
+
+```bash
+cd web
+npm run typecheck
+npm run test
+npm run build
+```
+
+MongoDB Atlas is configured through environment variables:
+
+```bash
+MONGODB_URI="mongodb+srv://..."
+MONGODB_DB="ai_character_vlogger"
+```
+
+If `MONGODB_URI` is not configured, the app still runs with browser local storage fallback. Use `/api/health/atlas` to verify Atlas runtime connectivity.
+
+## Legacy Prototype
+
+The first working artifact remains available as a local Vite prototype:
 
 ```bash
 cd prototype
@@ -31,7 +68,7 @@ The prototype currently includes:
 - Draft review queue with approval/export actions
 - Manual analytics entry for the first feedback loop
 
-This is intentionally not wired to generation, publishing, or Fanvue APIs yet. It validates the creator workflow shape before adding expensive or approval-gated integrations.
+The Next.js app in `web/` is now the primary implementation target.
 
 ## Working Thesis
 
