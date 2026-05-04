@@ -34,6 +34,7 @@ The current app implementation uses:
 Next.js App Router in web/
 + MongoDB Atlas via the official MongoDB Node.js driver
 + Vercel Blob for content uploads
++ Approved-asset export manifests
 + Vercel hosting
 ```
 
@@ -48,6 +49,8 @@ GET /api/metrics
 POST /api/metrics
 GET /api/media-assets
 POST /api/media-assets
+GET /api/export-packages
+POST /api/export-packages
 POST /api/uploads
 ```
 
@@ -57,6 +60,7 @@ MongoDB collections currently used:
 episode_drafts
 platform_metrics
 media_assets
+export_packages
 ```
 
 Media assets store Blob URLs plus review state:
@@ -65,6 +69,8 @@ Media assets store Blob URLs plus review state:
 Needs review -> Approved -> packaging/publishing
 Needs review -> Rejected -> exclude from packaging/publishing
 ```
+
+Export packages are generated from approved episode drafts and approved Blob assets. Assets that are pending review or rejected remain in the manifest under `excludedAssets` for auditability, but they are not included in the publishable asset list.
 
 ## Core Services
 

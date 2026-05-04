@@ -23,6 +23,7 @@ import { upload } from "@vercel/blob/client";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { defaultCharacter } from "@/data/sampleCharacter";
 import { vlogTemplates } from "@/data/templates";
+import { createExportPackage } from "@/lib/exportPackage";
 import {
   CharacterProfile,
   CtaGoal,
@@ -32,14 +33,14 @@ import {
   ToneMode,
   generateEpisodeDraft,
 } from "@/lib/episodeGenerator";
-import type { MetricRecord, SavedEpisodeDraft } from "@/lib/persistence";
-import type { MediaAssetRecord } from "@/lib/persistence";
+import type { ExportPackageRecord, MediaAssetRecord, MetricRecord, SavedEpisodeDraft } from "@/lib/persistence";
 
 type ActiveView = "builder" | "queue" | "assets" | "analytics";
 
 const savedDraftsKey = "ai-vlogger.saved-drafts";
 const metricsKey = "ai-vlogger.metrics";
 const mediaAssetsKey = "ai-vlogger.media-assets";
+const exportPackagesKey = "ai-vlogger.export-packages";
 const metricFields: Array<[keyof Omit<MetricRecord, "draftId" | "title" | "platform" | "notes" | "createdAt">, string]> = [
   ["views", "Views"],
   ["likes", "Likes"],
@@ -62,6 +63,7 @@ export function StudioApp() {
   const [savedDrafts, setSavedDrafts] = useLocalState<SavedEpisodeDraft[]>(savedDraftsKey, []);
   const [metrics, setMetrics] = useLocalState<MetricRecord[]>(metricsKey, []);
   const [mediaAssets, setMediaAssets] = useLocalState<MediaAssetRecord[]>(mediaAssetsKey, []);
+  const [exportPackages, setExportPackages] = useLocalState<ExportPackageRecord[]>(exportPackagesKey, []);
   const [atlasStatus, setAtlasStatus] = useState("Checking Atlas");
   const [blobStatus, setBlobStatus] = useState("Checking Blob");
   const [syncStatus, setSyncStatus] = useState("Local first");
@@ -90,11 +92,12 @@ export function StudioApp() {
       const health = await fetch("/api/health/atlas", { cache: "no-store" }).then((response) => response.json());
       setAtlasStatus(health.connected ? `Atlas connected: ${health.database}` : "Atlas not configured");
 
-      const [blobHealth, draftResponse, metricResponse, mediaResponse] = await Promise.all([
+      const [blobHealth, draftResponse, metricResponse, mediaResponse, exportResponse] = await Promise.all([
         fetch("/api/health/blob", { cache: "no-store" }).then((response) => response.json()),
         fetch("/api/drafts", { cache: "no-store" }).then((response) => response.json()),
         fetch("/api/metrics", { cache: "no-store" }).then((response) => response.json()),
         fetch("/api/media-assets", { cache: "no-store" }).then((response) => response.json()),
+        fetch("/api/export-packages", { cache: "no-store" }).then((response) => response.json()),
       ]);
 
       setBlobStatus(blobHealth.configured ? "Blob configured" : "Blob token missing");
@@ -109,6 +112,10 @@ export function StudioApp() {
 
       if (mediaResponse.persisted && mediaResponse.assets.length > 0) {
         setMediaAssets(mediaResponse.assets);
+      }
+
+      if (exportResponse.persisted && exportResponse.packages.length > 0) {
+        setExportPackages(exportResponse.packages);
       }
     } catch {
       setAtlasStatus("Atlas check unavailable");
@@ -150,10 +157,49 @@ export function StudioApp() {
     setSavedDrafts((current) => current.filter((item) => item.id !== draftId));
   }
 
-  function approveDraft(draftId: string) {
-    setSavedDrafts((current) =>
-      current.map((item) => (item.id === draftId ? { ...item, reviewStatus: "Approved" } : item)),
-    );
+  async function approveDraft(draftId: string) {
+    const targetDraft = savedDrafts.find((item) => item.id === draftId);
+    if (!targetDraft) return;
+
+    const updatedDraft: SavedEpisodeDraft = {
+      ...targetDraft,
+      reviewStatus: "Approved",
+      savedAt: targetDraft.savedAt || new Date().toISOString(),
+    };
+
+    setSavedDrafts((current) => current.map((item) => (item.id === draftId ? updatedDraft : item)));
+    setSyncStatus("Saving draft review");
+
+    try {
+      const result = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedDraft),
+      }).then((response) => response.json());
+      setSyncStatus(result.persisted ? "Draft review saved to Atlas" : "Draft review saved locally");
+    } catch {
+      setSyncStatus("Draft review saved locally");
+    }
+  }
+
+  async function packageDraft(savedDraft: SavedEpisodeDraft) {
+    const exportPackage = createExportPackage(savedDraft, mediaAssets);
+
+    setExportPackages((current) => [exportPackage, ...current.filter((item) => item.id !== exportPackage.id)].slice(0, 24));
+    setSyncStatus("Saving export package");
+
+    try {
+      const result = await fetch("/api/export-packages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(exportPackage),
+      }).then((response) => response.json());
+      setSyncStatus(result.persisted ? "Export package saved to Atlas" : "Export package saved locally");
+    } catch {
+      setSyncStatus("Export package saved locally");
+    }
+
+    downloadExportPackage(exportPackage);
   }
 
   async function updateMediaAssetReview(assetId: string, reviewStatus: MediaAssetRecord["reviewStatus"]) {
@@ -323,7 +369,15 @@ export function StudioApp() {
         )}
 
         {activeView === "queue" && (
-          <QueueView savedDrafts={savedDrafts} approveDraft={approveDraft} removeDraft={removeDraft} downloadDraft={downloadDraft} />
+          <QueueView
+            savedDrafts={savedDrafts}
+            mediaAssets={mediaAssets}
+            exportPackages={exportPackages}
+            approveDraft={approveDraft}
+            packageDraft={packageDraft}
+            removeDraft={removeDraft}
+            downloadDraft={downloadDraft}
+          />
         )}
 
         {activeView === "assets" && <AssetsView mediaAssets={mediaAssets} updateMediaAssetReview={updateMediaAssetReview} />}
@@ -526,7 +580,7 @@ function UploadPanel({
           <a href={asset.url} target="_blank" rel="noreferrer" key={asset.id} className="asset-link">
             <strong>{asset.originalFilename || asset.pathname}</strong>
             <small>
-              {asset.contentType} - {formatFileSize(asset.size)}
+              {asset.contentType} - {formatFileSize(asset.size)} - {asset.reviewStatus}
             </small>
           </a>
         ))}
@@ -607,12 +661,18 @@ function Checklist({ items, icon }: { items: string[]; icon: "check" | "upload" 
 
 function QueueView({
   savedDrafts,
+  mediaAssets,
+  exportPackages,
   approveDraft,
+  packageDraft,
   removeDraft,
   downloadDraft,
 }: {
   savedDrafts: SavedEpisodeDraft[];
-  approveDraft: (draftId: string) => void;
+  mediaAssets: MediaAssetRecord[];
+  exportPackages: ExportPackageRecord[];
+  approveDraft: (draftId: string) => Promise<void>;
+  packageDraft: (draft: SavedEpisodeDraft) => Promise<void>;
   removeDraft: (draftId: string) => void;
   downloadDraft: (draft: EpisodeDraft) => void;
 }) {
@@ -627,48 +687,98 @@ function QueueView({
   }
 
   return (
-    <section className="panel">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Human review</p>
-          <h3>Draft queue</h3>
-        </div>
-        <span className="count-pill">{savedDrafts.length} drafts</span>
-      </div>
-      <div className="draft-table" role="table">
-        <div className="draft-row header" role="row">
-          <span>Episode</span>
-          <span>Platform</span>
-          <span>Version</span>
-          <span>Status</span>
-          <span>Actions</span>
-        </div>
-        {savedDrafts.map((draft) => (
-          <div className="draft-row" role="row" key={`${draft.id}-${draft.savedAt}`}>
-            <span>
-              <strong>{draft.thumbnailTitle}</strong>
-              <small>{formatDate(draft.savedAt)}</small>
-            </span>
-            <span>{draft.platform}</span>
-            <span>{draft.characterVersion}</span>
-            <span>
-              <mark className={draft.reviewStatus === "Approved" ? "approved" : ""}>{draft.reviewStatus}</mark>
-            </span>
-            <span className="row-actions">
-              <button className="icon-button" onClick={() => approveDraft(draft.id)} title="Approve">
-                <CheckCircle2 size={16} />
-              </button>
-              <button className="icon-button" onClick={() => downloadDraft(draft)} title="Download package">
-                <Download size={16} />
-              </button>
-              <button className="icon-button danger" onClick={() => removeDraft(draft.id)} title="Remove">
-                <Trash2 size={16} />
-              </button>
-            </span>
+    <div className="queue-grid">
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Human review</p>
+            <h3>Draft queue</h3>
           </div>
-        ))}
-      </div>
-    </section>
+          <span className="count-pill">{savedDrafts.length} drafts</span>
+        </div>
+        <div className="draft-table" role="table">
+          <div className="draft-row header" role="row">
+            <span>Episode</span>
+            <span>Platform</span>
+            <span>Version</span>
+            <span>Media</span>
+            <span>Status</span>
+            <span>Actions</span>
+          </div>
+          {savedDrafts.map((draft) => {
+            const assetSummary = summarizeDraftAssets(draft.id, mediaAssets);
+            const canPackage = draft.reviewStatus === "Approved";
+
+            return (
+              <div className="draft-row" role="row" key={`${draft.id}-${draft.savedAt}`}>
+                <span>
+                  <strong>{draft.thumbnailTitle}</strong>
+                  <small>{formatDate(draft.savedAt)}</small>
+                </span>
+                <span>{draft.platform}</span>
+                <span>{draft.characterVersion}</span>
+                <span>
+                  <strong>{assetSummary.approved} approved</strong>
+                  <small>{assetSummary.total} linked</small>
+                </span>
+                <span>
+                  <mark className={draft.reviewStatus === "Approved" ? "approved" : ""}>{draft.reviewStatus}</mark>
+                </span>
+                <span className="row-actions">
+                  <button className="icon-button" onClick={() => void approveDraft(draft.id)} title="Approve draft">
+                    <CheckCircle2 size={16} />
+                  </button>
+                  <button className="icon-button" onClick={() => downloadDraft(draft)} title="Download draft JSON">
+                    <Download size={16} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    onClick={() => void packageDraft(draft)}
+                    title="Export approved asset package"
+                    disabled={!canPackage}
+                  >
+                    <FileJson size={16} />
+                  </button>
+                  <button className="icon-button danger" onClick={() => removeDraft(draft.id)} title="Remove">
+                    <Trash2 size={16} />
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Export packages</p>
+            <h3>Approved asset manifests</h3>
+          </div>
+          <span className="count-pill">{exportPackages.length} packages</span>
+        </div>
+        <div className="package-list">
+          {exportPackages.length === 0 && <p className="muted">Approved draft packages will appear here after export.</p>}
+          {exportPackages.map((item) => (
+            <article className="package-row" key={item.id}>
+              <div>
+                <strong>{item.title}</strong>
+                <small>
+                  {item.packageName} - {formatDate(item.createdAt)}
+                </small>
+              </div>
+              <span>
+                {item.approvedAssetCount} assets
+                <mark className={item.status === "Ready for publish" ? "approved" : ""}>{item.status}</mark>
+                <button className="icon-button" onClick={() => downloadExportPackage(item)} title="Download manifest">
+                  <Download size={16} />
+                </button>
+              </span>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -982,6 +1092,16 @@ function downloadDraft(draft: EpisodeDraft) {
   URL.revokeObjectURL(url);
 }
 
+function downloadExportPackage(exportPackage: ExportPackageRecord) {
+  const blob = new Blob([JSON.stringify(exportPackage.manifest, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${exportPackage.packageName}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
     month: "short",
@@ -997,6 +1117,14 @@ function formatNumber(value: number) {
 
 function savedDraftIdKey(drafts: SavedEpisodeDraft[]) {
   return drafts.map((draft) => draft.id).join("|");
+}
+
+function summarizeDraftAssets(draftId: string, mediaAssets: MediaAssetRecord[]) {
+  const draftAssets = mediaAssets.filter((asset) => asset.episodeDraftId === draftId);
+  return {
+    total: draftAssets.length,
+    approved: draftAssets.filter((asset) => asset.reviewStatus === "Approved").length,
+  };
 }
 
 function buildBlobPath(draft: EpisodeDraft, filename: string) {

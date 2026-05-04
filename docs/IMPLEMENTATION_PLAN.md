@@ -26,6 +26,7 @@ The Next.js app turns the planning docs into an operational MVP surface:
 - MongoDB Atlas persistence endpoints for drafts and metrics
 - Vercel Blob client uploads for content files
 - Media asset review states for uploaded content
+- Approved-asset export packages with downloadable manifest JSON
 
 The generation layer is currently deterministic. That is deliberate. It lets the product shape, data contracts, review gates, and creator workflow be tested before adding model costs, media pipeline complexity, publishing API approvals, or Fanvue integration.
 
@@ -95,11 +96,17 @@ web/src/app/api/uploads/route.ts
 web/src/app/api/media-assets/route.ts
   Uploaded content metadata and review state endpoint
 
+web/src/app/api/export-packages/route.ts
+  Approved media package metadata endpoint
+
 web/src/lib/mongodb.ts
   Lazy MongoDB Atlas client
 
 web/src/lib/episodeGenerator.ts
   Deterministic package generator and data contract
+
+web/src/lib/exportPackage.ts
+  Builds publish-ready manifests from approved drafts and approved Blob assets
 ```
 
 ## Legacy Prototype Architecture
@@ -172,6 +179,7 @@ When moving from local state to backend storage, each generated output should st
 - Use Vercel Blob for uploaded source assets, thumbnails, rendered videos, subtitles, and export package files.
 - Store Blob URLs and metadata in the `media_assets` Atlas collection.
 - Track each media asset through `Needs review`, `Approved`, and `Rejected` states before packaging or publishing.
+- Build export package manifests from approved drafts and approved assets only; pending and rejected assets are listed as excluded.
 - Generate thumbnail concepts first, then still images, then video clips.
 - Add subtitle file export and burned-in subtitle rendering.
 - Keep a review item for every generated media asset.
@@ -201,6 +209,7 @@ When moving from local state to backend storage, each generated output should st
 8. Add backend schema and API routes.
 9. Add model-backed structured generation behind the deterministic generator.
 10. Add media asset review queue.
+11. Store and download approved-asset export manifests.
 
 ## Engineering Decisions
 

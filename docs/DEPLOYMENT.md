@@ -50,6 +50,7 @@ Collections currently used by the app:
 episode_drafts
 platform_metrics
 media_assets
+export_packages
 ```
 
 The app uses lazy MongoDB client initialization so `next build` does not require database credentials.
@@ -119,5 +120,6 @@ vercel deploy web --prod -y
 - Content uploads call `POST /api/uploads` for a client upload token, then the browser uploads directly to Vercel Blob.
 - Uploaded content metadata is stored in `media_assets` when Atlas is configured.
 - Uploaded content can be reviewed as `Needs review`, `Approved`, or `Rejected`; review state is persisted through `POST /api/media-assets`.
+- Approved draft exports call `POST /api/export-packages`; generated manifests include only approved Blob assets in the publishable asset list.
 - Without Atlas env vars, persistence endpoints return `persisted: false` and the UI keeps local browser persistence.
-- With Atlas env vars, drafts are upserted into `episode_drafts` and metrics are inserted into `platform_metrics`.
+- With Atlas env vars, drafts are upserted into `episode_drafts`, media assets into `media_assets`, export packages into `export_packages`, and metrics are inserted into `platform_metrics`.
