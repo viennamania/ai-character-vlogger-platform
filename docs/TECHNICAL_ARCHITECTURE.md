@@ -35,6 +35,7 @@ Next.js App Router in web/
 + MongoDB Atlas via the official MongoDB Node.js driver
 + Vercel Blob for content uploads
 + Approved-asset export manifests
++ Editable draft copy workflow
 + Vercel hosting
 ```
 

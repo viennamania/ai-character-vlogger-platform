@@ -376,6 +376,42 @@ select:focus {
   margin-top: 18px;
 }
 
+.editor-panel {
+  margin-top: 18px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fbfcfe;
+  padding: 14px;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scene-edit-list,
+.caption-edit-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.scene-edit-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.caption-edit-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .output-section {
   border: 1px solid #d9dee7;
   border-radius: 8px;
@@ -917,6 +953,9 @@ mark.rejected {
   }
 
   .option-row,
+  .editor-grid,
+  .scene-edit-list,
+  .caption-edit-list,
   .output-grid,
   .metric-strip,
   .metrics-form,

@@ -2,6 +2,7 @@ import type { EpisodeDraft, Platform } from "@/lib/episodeGenerator";
 
 export interface SavedEpisodeDraft extends EpisodeDraft {
   savedAt: string;
+  editedAt?: string;
   reviewStatus: "Needs review" | "Approved";
 }
 

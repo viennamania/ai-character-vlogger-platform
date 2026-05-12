@@ -22,6 +22,7 @@ Next.js App Router
 + MongoDB Atlas through the official MongoDB Node.js driver
 + Vercel Blob for content uploads
 + Approved-asset export manifests for reviewed media packages
++ Editable episode drafts before human review
 + Vercel hosting
 ```
 

@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Play,
   Plus,
+  RotateCcw,
   Save,
   Server,
   ShieldCheck,
@@ -23,6 +24,12 @@ import { upload } from "@vercel/blob/client";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { defaultCharacter } from "@/data/sampleCharacter";
 import { vlogTemplates } from "@/data/templates";
+import {
+  EpisodeDraftEdits,
+  applyEpisodeDraftEdits,
+  buildSubtitleFromVoiceover,
+  hasEpisodeDraftEdits,
+} from "@/lib/draftEditor";
 import { createExportPackage } from "@/lib/exportPackage";
 import {
   CharacterProfile,
@@ -41,6 +48,7 @@ const savedDraftsKey = "ai-vlogger.saved-drafts";
 const metricsKey = "ai-vlogger.metrics";
 const mediaAssetsKey = "ai-vlogger.media-assets";
 const exportPackagesKey = "ai-vlogger.export-packages";
+const draftEditsKey = "ai-vlogger.draft-edits";
 const metricFields: Array<[keyof Omit<MetricRecord, "draftId" | "title" | "platform" | "notes" | "createdAt">, string]> = [
   ["views", "Views"],
   ["likes", "Likes"],
@@ -64,6 +72,7 @@ export function StudioApp() {
   const [metrics, setMetrics] = useLocalState<MetricRecord[]>(metricsKey, []);
   const [mediaAssets, setMediaAssets] = useLocalState<MediaAssetRecord[]>(mediaAssetsKey, []);
   const [exportPackages, setExportPackages] = useLocalState<ExportPackageRecord[]>(exportPackagesKey, []);
+  const [draftEdits, setDraftEdits] = useLocalState<Record<string, EpisodeDraftEdits>>(draftEditsKey, {});
   const [atlasStatus, setAtlasStatus] = useState("Checking Atlas");
   const [blobStatus, setBlobStatus] = useState("Checking Blob");
   const [syncStatus, setSyncStatus] = useState("Local first");
@@ -75,10 +84,14 @@ export function StudioApp() {
     [selectedTemplateId],
   );
 
-  const draft = useMemo(
+  const generatedDraft = useMemo(
     () => generateEpisodeDraft(character, selectedTemplate, options),
     [character, selectedTemplate, options],
   );
+
+  const activeDraftEdits = draftEdits[generatedDraft.id];
+  const draftHasEdits = hasEpisodeDraftEdits(activeDraftEdits);
+  const draft = useMemo(() => applyEpisodeDraftEdits(generatedDraft, activeDraftEdits), [generatedDraft, activeDraftEdits]);
 
   const totalViews = metrics.reduce((sum, item) => sum + item.views, 0);
   const totalPaidClicks = metrics.reduce((sum, item) => sum + item.paidClicks, 0);
@@ -131,10 +144,59 @@ export function StudioApp() {
     setOptions((current) => ({ ...current, [field]: value }));
   }
 
+  function updateDraftText(field: "hook" | "shortScript" | "thumbnailTitle" | "thumbnailDirection", value: string) {
+    setDraftEdits((current) => ({
+      ...current,
+      [generatedDraft.id]: {
+        ...current[generatedDraft.id],
+        [field]: value,
+      },
+    }));
+  }
+
+  function updateDraftCaption(platform: Platform, value: string) {
+    setDraftEdits((current) => ({
+      ...current,
+      [generatedDraft.id]: {
+        ...current[generatedDraft.id],
+        platformCaptions: {
+          ...current[generatedDraft.id]?.platformCaptions,
+          [platform]: value,
+        },
+      },
+    }));
+  }
+
+  function updateDraftSceneVoiceover(order: number, voiceover: string) {
+    setDraftEdits((current) => ({
+      ...current,
+      [generatedDraft.id]: {
+        ...current[generatedDraft.id],
+        scenePlan: {
+          ...current[generatedDraft.id]?.scenePlan,
+          [order]: {
+            ...current[generatedDraft.id]?.scenePlan?.[order],
+            voiceover,
+            subtitle: buildSubtitleFromVoiceover(voiceover),
+          },
+        },
+      },
+    }));
+  }
+
+  function resetDraftEdits() {
+    setDraftEdits((current) => {
+      const next = { ...current };
+      delete next[generatedDraft.id];
+      return next;
+    });
+  }
+
   async function saveDraft() {
     const saved: SavedEpisodeDraft = {
       ...draft,
       savedAt: new Date().toISOString(),
+      editedAt: draftHasEdits ? new Date().toISOString() : undefined,
       reviewStatus: "Needs review",
     };
 
@@ -365,6 +427,11 @@ export function StudioApp() {
             uploadStatus={uploadStatus}
             uploadProgress={uploadProgress}
             mediaAssets={mediaAssets}
+            draftHasEdits={draftHasEdits}
+            updateDraftText={updateDraftText}
+            updateDraftCaption={updateDraftCaption}
+            updateDraftSceneVoiceover={updateDraftSceneVoiceover}
+            resetDraftEdits={resetDraftEdits}
           />
         )}
 
@@ -407,6 +474,11 @@ interface BuilderViewProps {
   uploadStatus: string;
   uploadProgress: number | null;
   mediaAssets: MediaAssetRecord[];
+  draftHasEdits: boolean;
+  updateDraftText: (field: "hook" | "shortScript" | "thumbnailTitle" | "thumbnailDirection", value: string) => void;
+  updateDraftCaption: (platform: Platform, value: string) => void;
+  updateDraftSceneVoiceover: (order: number, voiceover: string) => void;
+  resetDraftEdits: () => void;
 }
 
 function BuilderView({
@@ -419,6 +491,11 @@ function BuilderView({
   uploadStatus,
   uploadProgress,
   mediaAssets,
+  draftHasEdits,
+  updateDraftText,
+  updateDraftCaption,
+  updateDraftSceneVoiceover,
+  resetDraftEdits,
 }: BuilderViewProps) {
   return (
     <div className="builder-grid">
@@ -495,6 +572,15 @@ function BuilderView({
           </label>
         </div>
 
+        <DraftEditor
+          draft={draft}
+          draftHasEdits={draftHasEdits}
+          updateDraftText={updateDraftText}
+          updateDraftCaption={updateDraftCaption}
+          updateDraftSceneVoiceover={updateDraftSceneVoiceover}
+          resetDraftEdits={resetDraftEdits}
+        />
+
         <OutputBlock draft={draft} />
       </section>
 
@@ -523,6 +609,80 @@ function BuilderView({
         />
       </aside>
     </div>
+  );
+}
+
+function DraftEditor({
+  draft,
+  draftHasEdits,
+  updateDraftText,
+  updateDraftCaption,
+  updateDraftSceneVoiceover,
+  resetDraftEdits,
+}: {
+  draft: EpisodeDraft;
+  draftHasEdits: boolean;
+  updateDraftText: (field: "hook" | "shortScript" | "thumbnailTitle" | "thumbnailDirection", value: string) => void;
+  updateDraftCaption: (platform: Platform, value: string) => void;
+  updateDraftSceneVoiceover: (order: number, voiceover: string) => void;
+  resetDraftEdits: () => void;
+}) {
+  return (
+    <section className="editor-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Editorial pass</p>
+          <h3>Draft copy</h3>
+        </div>
+        <div className="editor-actions">
+          <span className="count-pill">{draftHasEdits ? "Edited" : "Generated"}</span>
+          <button className="icon-button" onClick={resetDraftEdits} title="Reset generated copy" disabled={!draftHasEdits}>
+            <RotateCcw size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="editor-grid">
+        <label className="wide-input">
+          Hook
+          <textarea value={draft.hook} onChange={(event) => updateDraftText("hook", event.target.value)} rows={2} />
+        </label>
+        <label className="wide-input">
+          Short script
+          <textarea value={draft.shortScript} onChange={(event) => updateDraftText("shortScript", event.target.value)} rows={5} />
+        </label>
+        <label>
+          Thumbnail title
+          <input value={draft.thumbnailTitle} onChange={(event) => updateDraftText("thumbnailTitle", event.target.value)} />
+        </label>
+        <label>
+          Thumbnail direction
+          <textarea
+            value={draft.thumbnailDirection}
+            onChange={(event) => updateDraftText("thumbnailDirection", event.target.value)}
+            rows={3}
+          />
+        </label>
+      </div>
+
+      <div className="scene-edit-list">
+        {draft.scenePlan.map((scene) => (
+          <label key={scene.order}>
+            Scene {String(scene.order).padStart(2, "0")} voiceover
+            <textarea value={scene.voiceover} onChange={(event) => updateDraftSceneVoiceover(scene.order, event.target.value)} rows={2} />
+          </label>
+        ))}
+      </div>
+
+      <div className="caption-edit-list">
+        {(["youtube", "tiktok", "instagram"] as Platform[]).map((platform) => (
+          <label key={platform}>
+            {platform} caption
+            <textarea value={draft.platformCaptions[platform]} onChange={(event) => updateDraftCaption(platform, event.target.value)} rows={4} />
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -713,7 +873,10 @@ function QueueView({
               <div className="draft-row" role="row" key={`${draft.id}-${draft.savedAt}`}>
                 <span>
                   <strong>{draft.thumbnailTitle}</strong>
-                  <small>{formatDate(draft.savedAt)}</small>
+                  <small>
+                    {formatDate(draft.savedAt)}
+                    {draft.editedAt ? ` - edited ${formatDate(draft.editedAt)}` : ""}
+                  </small>
                 </span>
                 <span>{draft.platform}</span>
                 <span>{draft.characterVersion}</span>

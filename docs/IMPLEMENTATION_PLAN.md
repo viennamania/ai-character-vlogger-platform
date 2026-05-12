@@ -27,6 +27,7 @@ The Next.js app turns the planning docs into an operational MVP surface:
 - Vercel Blob client uploads for content files
 - Media asset review states for uploaded content
 - Approved-asset export packages with downloadable manifest JSON
+- Editable episode copy before save, review, and export
 
 The generation layer is currently deterministic. That is deliberate. It lets the product shape, data contracts, review gates, and creator workflow be tested before adding model costs, media pipeline complexity, publishing API approvals, or Fanvue integration.
 
@@ -45,12 +46,12 @@ Character profile
 
 Implemented MVP outputs:
 
-- Hook
+- Editable hook
 - Scene sequence
-- Voiceover/script
+- Editable voiceover/script
 - Subtitle copy
-- Thumbnail title and direction
-- Platform captions
+- Editable thumbnail title and direction
+- Editable platform captions
 - Hashtag suggestions
 - AI disclosure text
 - Review checklist
@@ -107,6 +108,9 @@ web/src/lib/episodeGenerator.ts
 
 web/src/lib/exportPackage.ts
   Builds publish-ready manifests from approved drafts and approved Blob assets
+
+web/src/lib/draftEditor.ts
+  Applies human copy edits to generated episode drafts before persistence
 ```
 
 ## Legacy Prototype Architecture
@@ -199,17 +203,16 @@ When moving from local state to backend storage, each generated output should st
 
 ## Immediate Product Backlog
 
-1. Add editable episode draft fields after generation.
-2. Add character version snapshots instead of editing one live object.
-3. Add template version numbers and content-safe defaults.
-4. Add SRT and Markdown export in addition to JSON.
-5. Add a simple episode calendar view.
-6. Add sample series arcs so episodes can build continuity.
-7. Add import/export for character profile JSON.
-8. Add backend schema and API routes.
-9. Add model-backed structured generation behind the deterministic generator.
-10. Add media asset review queue.
-11. Store and download approved-asset export manifests.
+1. Add character version snapshots instead of editing one live object.
+2. Add template version numbers and content-safe defaults.
+3. Add SRT and Markdown export in addition to JSON.
+4. Add a simple episode calendar view.
+5. Add sample series arcs so episodes can build continuity.
+6. Add import/export for character profile JSON.
+7. Add backend schema and API routes.
+8. Add model-backed structured generation behind the deterministic generator.
+9. Add media asset review queue.
+10. Store and download approved-asset export manifests.
 
 ## Engineering Decisions
 
